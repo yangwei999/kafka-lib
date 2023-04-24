@@ -72,7 +72,7 @@ func (c *Confluent) Address() string {
 }
 
 func (c *Confluent) Connect() error {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": c.opts.Addresses})
+	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": c.opts.Addresses[0]})
 	if err != nil {
 		return err
 	}
@@ -97,9 +97,10 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 
 func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscriber, err error) {
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": c.opts.Addresses,
-		"group.id":          group,
-		"auto.offset.reset": "earliest",
+		"bootstrap.servers":        c.opts.Addresses[0],
+		"group.id":                 group,
+		"auto.offset.reset":        "earliest",
+		"allow.auto.create.topics": true,
 	})
 	if err != nil {
 		return
@@ -150,7 +151,9 @@ func (e *event) Topic() string {
 func (e *event) Message() *mq.Message {
 	header := make(map[string]string)
 	for _, v := range e.msg.Headers {
-		header[v.Key] = string(v.Value)
+		if v.Value != nil {
+			header[v.Key] = string(v.Value)
+		}
 	}
 
 	return &mq.Message{
