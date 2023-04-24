@@ -26,7 +26,7 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	s, err := kafka.Subscribe(topic, "dada", func(event mq.Event) error {
+	s, err := kafka.Subscribe("confluent_test3", "dada", func(event mq.Event) error {
 		fmt.Println(string(event.Message().Body))
 
 		return nil
