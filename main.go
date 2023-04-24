@@ -35,8 +35,6 @@ func main() {
 
 	fmt.Println("3")
 
-	defer s.Unsubscribe()
-
 	i := 0
 	for {
 		err = kafka.Publish("confulent_wawa", &mq.Message{
@@ -48,6 +46,13 @@ func main() {
 
 		fmt.Println("send ok")
 		i++
+
+		if i == 50 {
+			if err = s.Unsubscribe(); err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
 
 		time.Sleep(time.Second * 1)
 	}
