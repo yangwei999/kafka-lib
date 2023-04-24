@@ -1,17 +1,18 @@
-package kafka
+package sarama
 
 import (
 	"testing"
 
+	"github.com/opensourceways/kafka-lib/kafka"
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
 func TestBroker(t *testing.T) {
-	if err := Init(); err != nil {
+	if err := kafka.Init(); err != nil {
 		t.Fatalf("mq init error: %v", err)
 	}
 
-	if err := Connect(); err != nil {
+	if err := kafka.Connect(); err != nil {
 		t.Fatalf("mq connect error: %v", err)
 	}
 
@@ -23,7 +24,7 @@ func TestBroker(t *testing.T) {
 	}
 	done := make(chan bool)
 
-	sub, err := Subscribe("mq-test", "test23", func(event mq.Event) error {
+	sub, err := kafka.Subscribe("mq-test", "test23", func(event mq.Event) error {
 		m := event.Message()
 		if string(m.Body) != string(msg.Body) {
 			t.Fatalf("Unexpected msg %s, expected %s", string(m.Body), string(msg.Body))
@@ -39,14 +40,14 @@ func TestBroker(t *testing.T) {
 		t.Fatalf("Unexpected subscribe error: %v", err)
 	}
 
-	if err := Publish("mq-test", &msg); err != nil {
+	if err := kafka.Publish("mq-test", &msg); err != nil {
 		t.Fatalf("Unexpected publish error: %v", err)
 	}
 
 	<-done
 	_ = sub.Unsubscribe()
 
-	if err := Disconnect(); err != nil {
+	if err := kafka.Disconnect(); err != nil {
 		t.Fatalf("Unexpected disconnect error: %v", err)
 	}
 }
@@ -54,11 +55,11 @@ func TestBroker(t *testing.T) {
 func TestTwoPartitionMultipleConsumerWithSameKey(t *testing.T) {
 	// note: the topic of xwz has 2 partitions
 
-	if err := Init(); err != nil {
+	if err := kafka.Init(); err != nil {
 		t.Fatalf("mq init error: %v", err)
 	}
 
-	if err := Connect(); err != nil {
+	if err := kafka.Connect(); err != nil {
 		t.Fatalf("mq connect error: %v", err)
 	}
 
@@ -81,7 +82,7 @@ func TestTwoPartitionMultipleConsumerWithSameKey(t *testing.T) {
 	done := make(chan bool)
 	sub1HasConsumed, sub2HasConsumed := false, false
 
-	if _, err := Subscribe("xwz", "test-xwz", func(event mq.Event) error {
+	if _, err := kafka.Subscribe("xwz", "test-xwz", func(event mq.Event) error {
 		sub1HasConsumed = true
 		m := event.Message()
 		if m == nil {
@@ -99,7 +100,7 @@ func TestTwoPartitionMultipleConsumerWithSameKey(t *testing.T) {
 		t.Fatalf("Unexpected subscribe error: %v", err)
 	}
 
-	if _, err := Subscribe("xwz", "test-xwz", func(event mq.Event) error {
+	if _, err := kafka.Subscribe("xwz", "test-xwz", func(event mq.Event) error {
 		sub2HasConsumed = true
 		m := event.Message()
 		if m == nil {
@@ -117,17 +118,17 @@ func TestTwoPartitionMultipleConsumerWithSameKey(t *testing.T) {
 		t.Fatalf("Unexpected subscribe error: %v", err)
 	}
 
-	if err := Publish("xwz", &msg); err != nil {
+	if err := kafka.Publish("xwz", &msg); err != nil {
 		t.Fatalf("Unexpected publish error: %v", err)
 	}
 
-	if err := Publish("xwz", &shutdownMsg); err != nil {
+	if err := kafka.Publish("xwz", &shutdownMsg); err != nil {
 		t.Fatalf("Unexpected publish error: %v", err)
 	}
 
 	<-done
 
-	if err := Disconnect(); err != nil {
+	if err := kafka.Disconnect(); err != nil {
 		t.Fatalf("Unexpected disconnect error: %v", err)
 	}
 
@@ -140,11 +141,11 @@ func TestTwoPartitionMultipleConsumerWithSameKey(t *testing.T) {
 func TestTwoPartitionMultipleConsumerWithDiffKey(t *testing.T) {
 	//note: the topic of xwz has 2 partitions
 
-	if err := Init(); err != nil {
+	if err := kafka.Init(); err != nil {
 		t.Fatalf("mq init error: %v", err)
 	}
 
-	if err := Connect(); err != nil {
+	if err := kafka.Connect(); err != nil {
 		t.Fatalf("mq connect error: %v", err)
 	}
 
@@ -167,7 +168,7 @@ func TestTwoPartitionMultipleConsumerWithDiffKey(t *testing.T) {
 	done := make(chan bool)
 	sub1HasConsumed, sub2HasConsumed := false, false
 
-	if _, err := Subscribe("xwz", "test-xwz", func(event mq.Event) error {
+	if _, err := kafka.Subscribe("xwz", "test-xwz", func(event mq.Event) error {
 		sub1HasConsumed = true
 		m := event.Message()
 		if m == nil {
@@ -185,7 +186,7 @@ func TestTwoPartitionMultipleConsumerWithDiffKey(t *testing.T) {
 		t.Fatalf("Unexpected subscribe error: %v", err)
 	}
 
-	if _, err := Subscribe("xwz", "test-xwz", func(event mq.Event) error {
+	if _, err := kafka.Subscribe("xwz", "test-xwz", func(event mq.Event) error {
 		sub2HasConsumed = true
 		m := event.Message()
 		if m == nil {
@@ -203,17 +204,17 @@ func TestTwoPartitionMultipleConsumerWithDiffKey(t *testing.T) {
 		t.Fatalf("Unexpected subscribe error: %v", err)
 	}
 
-	if err := Publish("xwz", &msg); err != nil {
+	if err := kafka.Publish("xwz", &msg); err != nil {
 		t.Fatalf("Unexpected publish error: %v", err)
 	}
 
-	if err := Publish("xwz", &shutdownMsg); err != nil {
+	if err := kafka.Publish("xwz", &shutdownMsg); err != nil {
 		t.Fatalf("Unexpected publish error: %v", err)
 	}
 
 	<-done
 
-	if err := Disconnect(); err != nil {
+	if err := kafka.Disconnect(); err != nil {
 		t.Fatalf("Unexpected disconnect error: %v", err)
 	}
 

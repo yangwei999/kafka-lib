@@ -48,19 +48,19 @@ type Subscriber interface {
 
 // Message is the message entity.
 type Message struct {
-	key    string
+	Key    string
 	Header map[string]string
 	Body   []byte
 }
 
 // SetMessageKey set a flag that represents the message
 func (msg *Message) SetMessageKey(key string) {
-	msg.key = key
+	msg.Key = key
 }
 
 // MessageKey get the flag that represents the message
 func (msg Message) MessageKey() string {
-	return msg.key
+	return msg.Key
 }
 
 // Handler is used to process messages via a subscription of a topic.
