@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -36,13 +37,15 @@ func main() {
 
 	defer s.Unsubscribe()
 
+	i := 0
 	for {
 		err = kafka.Publish("confulent_wawa", &mq.Message{
-			Body: []byte("hello, world"),
+			Body: []byte(strconv.Itoa(i)),
 		})
 		if err != nil {
 			logrus.Fatal(err)
 		}
+		i++
 
 		time.Sleep(time.Second * 1)
 	}
