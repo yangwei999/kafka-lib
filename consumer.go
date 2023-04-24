@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
-	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -11,28 +9,25 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-const topic = "confluent_test"
-
 func main() {
 	if err := kafka.InitV2(mq.Addresses("10.0.0.161:9092")); err != nil {
 		logrus.Fatal(err)
 	}
 
+	fmt.Println("1")
+
 	if err := kafka.Connect(); err != nil {
 		logrus.Fatal(err)
 	}
 
-	i := 0
-	for {
-		err := kafka.Publish(topic, &mq.Message{
-			Body: []byte(strconv.Itoa(i)),
-		})
-		if err != nil {
-			logrus.Fatal(err)
-		}
+	s, err := kafka.Subscribe(topic, "dada", func(event mq.Event) error {
+		fmt.Println(string(event.Message().Body))
 
-		fmt.Printf("send ok %d", i)
-
-		time.Sleep(time.Second * 1)
+		return nil
+	})
+	if err != nil {
+		logrus.Fatal(err)
 	}
+
+	defer s.Unsubscribe()
 }

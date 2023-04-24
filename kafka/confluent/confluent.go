@@ -100,6 +100,7 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 		"group.id":                 group,
 		"auto.offset.reset":        "earliest",
 		"allow.auto.create.topics": true,
+		"enable.auto.commit":       true,
 	})
 	if err != nil {
 		return
