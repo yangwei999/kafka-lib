@@ -119,12 +119,15 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 				return
 			}
 
+			if msg == nil {
+				continue
+			}
+
 			e := newEvent(msg)
 			if err = h(e); err != nil {
 				logrus.Errorf("handle msg error: %s", err.Error())
 			}
 
-			time.Sleep(time.Second)
 		}
 
 	}()

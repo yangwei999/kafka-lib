@@ -36,15 +36,15 @@ func main() {
 
 	defer s.Unsubscribe()
 
-	err = kafka.Publish("confulent_wawa", &mq.Message{
-		Body: []byte("hello, world"),
-	})
-	if err != nil {
-		logrus.Fatal(err)
+	for {
+		err = kafka.Publish("confulent_wawa", &mq.Message{
+			Body: []byte("hello, world"),
+		})
+		if err != nil {
+			logrus.Fatal(err)
+		}
+
+		time.Sleep(time.Second * 1)
 	}
-
-	fmt.Println("4")
-
-	time.Sleep(time.Second * 5)
 
 }
