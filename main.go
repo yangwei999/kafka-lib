@@ -11,6 +11,8 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
+const topic = "confluent_test"
+
 func main() {
 	if err := kafka.InitV2(mq.Addresses("10.0.0.161:9092")); err != nil {
 		logrus.Fatal(err)
@@ -24,7 +26,7 @@ func main() {
 
 	fmt.Println("2")
 
-	s, err := kafka.Subscribe("confulent_wawa", "dada", func(event mq.Event) error {
+	s, err := kafka.Subscribe(topic, "dada", func(event mq.Event) error {
 		fmt.Println(string(event.Message().Body))
 
 		return nil
@@ -37,7 +39,7 @@ func main() {
 
 	i := 0
 	for {
-		err = kafka.Publish("confulent_wawa", &mq.Message{
+		err = kafka.Publish(topic, &mq.Message{
 			Body: []byte(strconv.Itoa(i)),
 		})
 		if err != nil {
