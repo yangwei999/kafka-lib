@@ -20,8 +20,6 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	fmt.Println("1")
-
 	if err := kafka.Connect(); err != nil {
 		logrus.Fatal(err)
 	}
