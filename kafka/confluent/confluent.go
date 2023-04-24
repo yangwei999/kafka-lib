@@ -128,8 +128,9 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 				logrus.Errorf("handle msg error: %s", err.Error())
 			}
 
-			consumer.CommitMessage(msg)
-
+			go func() {
+				consumer.CommitMessage(msg)
+			}()
 		}
 
 	}()
