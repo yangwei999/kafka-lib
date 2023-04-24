@@ -3,7 +3,6 @@ package confluent
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/sirupsen/logrus"
@@ -113,7 +112,7 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 	go func() {
 		run := true
 		for run {
-			msg, err := consumer.ReadMessage(time.Second)
+			msg, err := consumer.ReadMessage(-1)
 			if err != nil && !err.(kafka.Error).IsTimeout() {
 				fmt.Println(err)
 				return

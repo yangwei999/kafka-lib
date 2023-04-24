@@ -45,6 +45,8 @@ func main() {
 		if err != nil {
 			logrus.Fatal(err)
 		}
+
+		fmt.Println("send ok")
 		i++
 
 		time.Sleep(time.Second * 1)
