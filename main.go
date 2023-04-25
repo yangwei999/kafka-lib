@@ -31,12 +31,12 @@ func main() {
 			logrus.Fatal(err)
 		}
 
-		//err = kafka.Publish("confluent_test", &mq.Message{
-		//	Body: []byte(strconv.Itoa(i)),
-		//})
-		//if err != nil {
-		//	logrus.Fatal(err)
-		//}
+		err = kafka.Publish("confluent_test", &mq.Message{
+			Body: []byte(strconv.Itoa(i)),
+		})
+		if err != nil {
+			logrus.Fatal(err)
+		}
 
 		fmt.Printf("send ok %d \n", i)
 
