@@ -123,6 +123,7 @@ func newSubscriber(broker, topic, group string, handler mq.Handler) (sub *subscr
 		consumer:   consumer,
 		handler:    handler,
 		commitChan: make(chan *kafka.Message, 10000),
+		stopRead:   make(chan struct{}),
 	}
 
 	return
