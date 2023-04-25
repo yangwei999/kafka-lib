@@ -11,7 +11,7 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-const topic = "confluent_test3"
+const topic = "confluent_test5"
 
 func main() {
 	if err := kafka.InitV2(mq.Addresses("10.0.0.161:9092")); err != nil {
@@ -31,12 +31,12 @@ func main() {
 			logrus.Fatal(err)
 		}
 
-		err = kafka.Publish("confluent_test", &mq.Message{
-			Body: []byte(strconv.Itoa(i)),
-		})
-		if err != nil {
-			logrus.Fatal(err)
-		}
+		//err = kafka.Publish("confluent_test", &mq.Message{
+		//	Body: []byte(strconv.Itoa(i)),
+		//})
+		//if err != nil {
+		//	logrus.Fatal(err)
+		//}
 
 		fmt.Printf("send ok %d \n", i)
 
