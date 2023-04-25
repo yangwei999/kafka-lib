@@ -33,6 +33,8 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
+	c.consumers = sets.NewString()
+
 	return nil
 }
 
