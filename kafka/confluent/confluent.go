@@ -1,8 +1,8 @@
 package confluent
 
 import (
-	"context"
-	"fmt"
+	"strings"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/sirupsen/logrus"
@@ -10,32 +10,17 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-func NewConfluentMQ(opts ...mq.Option) mq.MQ {
-	options := mq.Options{
-		Codec:   mq.JsonCodec{},
-		Context: context.Background(),
-	}
-
-	for _, o := range opts {
-		o(&options)
-	}
-
-	if len(options.Addresses) == 0 {
-		options.Addresses = []string{"127.0.0.1:9092"}
-	}
-
-	if options.Log == nil {
-		options.Log = logrus.New().WithField("function", "kafka mq")
-	}
-
-	return &Confluent{
-		opts: options,
-	}
+func NewConfluentMQ() mq.MQ {
+	return &Confluent{}
 }
 
 type Confluent struct {
 	producer *kafka.Producer
+	consumer *kafka.Consumer
 	opts     mq.Options
+	broker   string
+
+	commit chan *kafka.Message
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -47,13 +32,9 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 		c.opts.Addresses = []string{"127.0.0.1:9092"}
 	}
 
-	if c.opts.Context == nil {
-		c.opts.Context = context.Background()
-	}
+	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	if c.opts.Codec == nil {
-		c.opts.Codec = mq.JsonCodec{}
-	}
+	c.commit = make(chan *kafka.Message, 1000)
 
 	return nil
 }
@@ -71,7 +52,7 @@ func (c *Confluent) Address() string {
 }
 
 func (c *Confluent) Connect() error {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": c.opts.Addresses[0]})
+	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": c.broker})
 	if err != nil {
 		return err
 	}
@@ -91,31 +72,37 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 	return c.producer.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          msg.Body,
+		Key:            []byte(msg.MessageKey()),
+		Timestamp:      time.Now(),
 	}, nil)
 }
 
 func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscriber, err error) {
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        c.opts.Addresses[0],
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
-	})
-	if err != nil {
-		return
+	if c.consumer == nil {
+		consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+			"bootstrap.servers":        c.broker,
+			"group.id":                 group,
+			"auto.offset.reset":        "earliest",
+			"allow.auto.create.topics": true,
+			"enable.auto.commit":       false,
+		})
+		if err != nil {
+			return
+		}
+
+		c.consumer = consumer
 	}
 
-	if err = consumer.Subscribe(topic, nil); err != nil {
+	if err = c.consumer.Subscribe(topic, nil); err != nil {
 		return
 	}
 
 	go func() {
-		run := true
-		for run {
-			msg, err := consumer.ReadMessage(-1)
+		for {
+			//TODO exit?
+
+			msg, err := c.consumer.ReadMessage(-1)
 			if err != nil && !err.(kafka.Error).IsTimeout() {
-				fmt.Println(err)
 				return
 			}
 
@@ -128,57 +115,24 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 				logrus.Errorf("handle msg error: %s", err.Error())
 			}
 
-			go func() {
-				consumer.CommitMessage(msg)
-			}()
+			// commit offset async by channel
+			c.commit <- msg
 		}
-
 	}()
 
-	return newSubscriber(consumer), nil
+	go func() {
+		for m := range c.commit {
+			//todo  wait job
+			c.consumer.CommitMessage(m)
+
+		}
+	}()
+
+	return newSubscriber(c.consumer), nil
 }
 
 func (c *Confluent) String() string {
 	return "kafka"
-}
-
-type event struct {
-	msg *kafka.Message
-}
-
-func newEvent(msg *kafka.Message) mq.Event {
-	return &event{msg: msg}
-}
-
-func (e *event) Topic() string {
-	return *e.msg.TopicPartition.Topic
-}
-
-func (e *event) Message() *mq.Message {
-	header := make(map[string]string)
-	for _, v := range e.msg.Headers {
-		if v.Value != nil {
-			header[v.Key] = string(v.Value)
-		}
-	}
-
-	return &mq.Message{
-		Key:    string(e.msg.Key),
-		Header: header,
-		Body:   e.msg.Value,
-	}
-}
-
-func (e *event) Ack() error {
-	return nil
-}
-
-func (e *event) Error() error {
-	return nil
-}
-
-func (e *event) Extra() map[string]interface{} {
-	return nil
 }
 
 func newSubscriber(c *kafka.Consumer) mq.Subscriber {
@@ -194,7 +148,9 @@ func (s *subscriber) Options() mq.SubscribeOptions {
 }
 
 func (s *subscriber) Topic() string {
-	return ""
+	topics, _ := s.consumer.Subscription()
+
+	return strings.Join(topics, ",")
 }
 
 func (s *subscriber) Unsubscribe() error {
