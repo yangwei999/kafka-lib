@@ -33,7 +33,7 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	s2, err := kafka.Subscribe("confluent_test", "dada", func(event mq.Event) error {
+	_, err = kafka.Subscribe("confluent_test", "dada", func(event mq.Event) error {
 		fmt.Println(string(event.Message().Body))
 
 		return nil
@@ -46,7 +46,6 @@ func main() {
 	case sig := <-sigchan:
 		fmt.Printf("Caught signal %v: terminating\n", sig)
 		s.Unsubscribe()
-		s2.Unsubscribe()
 	}
 
 }
