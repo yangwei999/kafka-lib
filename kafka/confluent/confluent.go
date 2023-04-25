@@ -109,8 +109,6 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 		return
 	}
 
-	consumer.IsClosed()
-
 	go func() {
 		for {
 			select {
