@@ -106,19 +106,19 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 			} else {
 				logrus.Errorf("consumer error: %v (%v)", err, msg)
 			}
-
+			c.consumer.CommitMessage(msg)
 			// commit offset async by channel
-			c.commitChan <- msg
+			//c.commitChan <- msg
 		}
 	}()
 
-	go func() {
-		for m := range c.commitChan {
-			//todo  wait job
-			c.consumer.CommitMessage(m)
-
-		}
-	}()
+	//go func() {
+	//	for m := range c.commitChan {
+	//		//todo  wait job
+	//		c.consumer.CommitMessage(m)
+	//
+	//	}
+	//}()
 
 	return newSubscriber(c.consumer), nil
 }
