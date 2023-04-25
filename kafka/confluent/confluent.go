@@ -2,6 +2,7 @@ package confluent
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -21,6 +22,8 @@ type Confluent struct {
 	broker   string
 
 	commitChan chan *kafka.Message
+	stopRead   chan struct{}
+	wg         sync.WaitGroup
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -35,6 +38,8 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
 	c.commitChan = make(chan *kafka.Message, 10000)
+
+	c.stopRead = make(chan struct{})
 
 	return nil
 }
@@ -97,42 +102,53 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 
 	go func() {
 		for {
-			msg, err := c.consumer.ReadMessage(-1)
-			if msg != nil {
-				e := newEvent(msg)
-				if err = h(e); err != nil {
-					logrus.Errorf("handle msg error: %s", err.Error())
-				}
-			} else {
-				logrus.Errorf("consumer error: %v (%v)", err, msg)
-				continue
-			}
+			select {
+			case <-c.stopRead:
+				close(c.commitChan)
 
-			// commit offset async
-			c.commitChan <- msg
+				return
+			default:
+				msg, err := c.consumer.ReadMessage(-1)
+				if msg != nil {
+					e := newEvent(msg)
+					if err = h(e); err != nil {
+						logrus.Errorf("handle msg error: %s", err.Error())
+					}
+				} else {
+					logrus.Errorf("consumer error: %v (%v)", err, msg)
+					continue
+				}
+
+				// commit offset async
+				c.commitChan <- msg
+			}
 		}
 	}()
 
+	c.wg.Add(1)
 	go func() {
 		for m := range c.commitChan {
-			//todo  wait job
-			c.consumer.CommitMessage(m)
+			if _, err := c.consumer.CommitMessage(m); err != nil {
+				logrus.Errorf("commit error: %v (%v)", err, m)
+			}
 		}
+
+		c.wg.Done()
 	}()
 
-	return newSubscriber(c.consumer), nil
+	return newSubscriber(c), nil
 }
 
 func (c *Confluent) String() string {
 	return "kafka"
 }
 
-func newSubscriber(c *kafka.Consumer) mq.Subscriber {
-	return &subscriber{consumer: c}
+func newSubscriber(c *Confluent) mq.Subscriber {
+	return &subscriber{confluent: c}
 }
 
 type subscriber struct {
-	consumer *kafka.Consumer
+	confluent *Confluent
 }
 
 func (s *subscriber) Options() mq.SubscribeOptions {
@@ -140,11 +156,19 @@ func (s *subscriber) Options() mq.SubscribeOptions {
 }
 
 func (s *subscriber) Topic() string {
-	topics, _ := s.consumer.Subscription()
+	topics, _ := s.confluent.consumer.Subscription()
 
 	return strings.Join(topics, ",")
 }
 
 func (s *subscriber) Unsubscribe() error {
-	return s.consumer.Unsubscribe()
+	if err := s.confluent.consumer.Unsubscribe(); err != nil {
+		return err
+	}
+
+	close(s.confluent.stopRead)
+
+	s.confluent.wg.Wait()
+
+	return nil
 }
