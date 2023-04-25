@@ -162,6 +162,8 @@ func newSubscriber(c *Confluent) mq.Subscriber {
 
 type subscriber struct {
 	confluent *Confluent
+
+	lock sync.RWMutex
 }
 
 func (s *subscriber) Options() mq.SubscribeOptions {
@@ -175,6 +177,9 @@ func (s *subscriber) Topic() string {
 }
 
 func (s *subscriber) Unsubscribe() error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	if s.confluent.consumer.IsClosed() {
 		return nil
 	}
