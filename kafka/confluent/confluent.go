@@ -21,12 +21,7 @@ type Confluent struct {
 	opts     mq.Options
 	broker   string
 
-	commitChan chan *kafka.Message
-	stopRead   chan struct{}
-
-	consumers map[string]*kafka.Consumer
-
-	wg sync.WaitGroup
+	consumers map[string]struct{}
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -40,11 +35,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	c.commitChan = make(chan *kafka.Message, 10000)
-
-	c.stopRead = make(chan struct{})
-
-	c.consumers = make(map[string]*kafka.Consumer)
+	c.consumers = make(map[string]struct{})
 
 	return nil
 }
@@ -87,10 +78,6 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 	}, nil)
 }
 
-func (c *Confluent) getConsumer() {
-
-}
-
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Subscriber, err error) {
 	if _, ok := c.consumers[group]; ok {
 		err = errors.New("the group already exists, we don't recommend a group subscribe multiple topics")
@@ -98,8 +85,27 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 		return
 	}
 
-	c.consumers[group], err = kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        c.broker,
+	ns, err := newSubscriber(c.broker, topic, group, handler)
+	if err != nil {
+		return
+	}
+
+	ns.start()
+
+	c.consumers[group] = struct{}{}
+
+	s = ns
+
+	return
+}
+
+func (c *Confluent) String() string {
+	return "kafka"
+}
+
+func newSubscriber(broker, topic, group string, handler mq.Handler) (sub *subscriber, err error) {
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers":        broker,
 		"group.id":                 group,
 		"auto.offset.reset":        "earliest",
 		"allow.auto.create.topics": true,
@@ -109,22 +115,42 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 		return
 	}
 
-	if err = c.consumers[group].Subscribe(topic, nil); err != nil {
+	if err = consumer.Subscribe(topic, nil); err != nil {
 		return
 	}
 
+	sub = &subscriber{
+		consumer:   consumer,
+		handler:    handler,
+		commitChan: make(chan *kafka.Message, 10000),
+	}
+
+	return
+}
+
+type subscriber struct {
+	consumer *kafka.Consumer
+	handler  mq.Handler
+
+	commitChan chan *kafka.Message
+	stopRead   chan struct{}
+
+	wg sync.WaitGroup
+}
+
+func (s *subscriber) start() {
 	go func() {
 		for {
 			select {
-			case <-c.stopRead:
-				close(c.commitChan)
+			case <-s.stopRead:
+				close(s.commitChan)
 
 				return
 			default:
-				msg, err := c.consumers[group].ReadMessage(-1)
+				msg, err := s.consumer.ReadMessage(-1)
 				if msg != nil {
 					e := newEvent(msg)
-					if err = handler(e); err != nil {
+					if err = s.handler(e); err != nil {
 						logrus.Errorf("handle msg error: %s", err.Error())
 					}
 
@@ -134,36 +160,22 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 				}
 
 				// commit offset async
-				c.commitChan <- msg
+				s.commitChan <- msg
 			}
 		}
 	}()
 
-	c.wg.Add(1)
+	s.wg.Add(1)
 	go func() {
-		for m := range c.commitChan {
-			if _, err := c.consumers[group].CommitMessage(m); err != nil {
+		for m := range s.commitChan {
+			if _, err := s.consumer.CommitMessage(m); err != nil {
 				logrus.Errorf("commit error: %v (%v)", err, m)
 			}
 		}
 
-		c.wg.Done()
+		s.wg.Done()
 	}()
 
-	return newSubscriber(c, group), nil
-}
-
-func (c *Confluent) String() string {
-	return "kafka"
-}
-
-func newSubscriber(c *Confluent, group string) mq.Subscriber {
-	return &subscriber{confluent: c, group: group}
-}
-
-type subscriber struct {
-	confluent *Confluent
-	group     string
 }
 
 func (s *subscriber) Options() mq.SubscribeOptions {
@@ -171,15 +183,15 @@ func (s *subscriber) Options() mq.SubscribeOptions {
 }
 
 func (s *subscriber) Topic() string {
-	topics, _ := s.confluent.consumers[s.group].Subscription()
+	topics, _ := s.consumer.Subscription()
 
 	return strings.Join(topics, ",")
 }
 
 func (s *subscriber) Unsubscribe() error {
-	close(s.confluent.stopRead)
+	close(s.stopRead)
 
-	s.confluent.wg.Wait()
+	s.wg.Wait()
 
-	return s.confluent.consumers[s.group].Close()
+	return s.consumer.Close()
 }
