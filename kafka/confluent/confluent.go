@@ -20,7 +20,7 @@ type Confluent struct {
 	opts     mq.Options
 	broker   string
 
-	commit chan *kafka.Message
+	commitChan chan *kafka.Message
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -34,7 +34,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	c.commit = make(chan *kafka.Message, 1000)
+	c.commitChan = make(chan *kafka.Message, 10000)
 
 	return nil
 }
@@ -99,29 +99,23 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 
 	go func() {
 		for {
-			//TODO exit?
-
 			msg, err := c.consumer.ReadMessage(-1)
-			if err != nil && !err.(kafka.Error).IsTimeout() {
-				return
-			}
-
-			if msg == nil {
-				continue
-			}
-
-			e := newEvent(msg)
-			if err = h(e); err != nil {
-				logrus.Errorf("handle msg error: %s", err.Error())
+			if msg != nil {
+				e := newEvent(msg)
+				if err = h(e); err != nil {
+					logrus.Errorf("handle msg error: %s", err.Error())
+				}
+			} else {
+				logrus.Errorf("consumer error: %v (%v)", err, msg)
 			}
 
 			// commit offset async by channel
-			c.commit <- msg
+			c.commitChan <- msg
 		}
 	}()
 
 	go func() {
-		for m := range c.commit {
+		for m := range c.commitChan {
 			//todo  wait job
 			c.consumer.CommitMessage(m)
 
