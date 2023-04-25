@@ -1,6 +1,7 @@
 package confluent
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -17,15 +18,13 @@ func NewConfluentMQ() mq.MQ {
 
 type Confluent struct {
 	producer *kafka.Producer
-	consumer *kafka.Consumer
 	opts     mq.Options
 	broker   string
 
 	commitChan chan *kafka.Message
 	stopRead   chan struct{}
 
-	topics  []string
-	handler map[string]mq.Handler
+	consumers map[string]*kafka.Consumer
 
 	wg sync.WaitGroup
 }
@@ -45,7 +44,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.stopRead = make(chan struct{})
 
-	c.handler = make(map[string]mq.Handler)
+	c.consumers = make(map[string]*kafka.Consumer)
 
 	return nil
 }
@@ -88,24 +87,29 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 	}, nil)
 }
 
+func (c *Confluent) getConsumer() {
+
+}
+
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Subscriber, err error) {
-	if c.consumer == nil {
-		c.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
-			"bootstrap.servers":        c.broker,
-			"group.id":                 group,
-			"auto.offset.reset":        "earliest",
-			"allow.auto.create.topics": true,
-			"enable.auto.commit":       false,
-		})
-		if err != nil {
-			return
-		}
+	if _, ok := c.consumers[group]; ok {
+		err = errors.New("the group already exists, we don't recommend a group subscribe multiple topics")
+
+		return
 	}
 
-	c.topics = append(c.topics, topic)
-	c.handler[topic] = handler
+	c.consumers[group], err = kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers":        c.broker,
+		"group.id":                 group,
+		"auto.offset.reset":        "earliest",
+		"allow.auto.create.topics": true,
+		"enable.auto.commit":       false,
+	})
+	if err != nil {
+		return
+	}
 
-	if err = c.consumer.SubscribeTopics(c.topics, nil); err != nil {
+	if err = c.consumers[group].Subscribe(topic, nil); err != nil {
 		return
 	}
 
@@ -117,14 +121,13 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 
 				return
 			default:
-				msg, err := c.consumer.ReadMessage(-1)
+				msg, err := c.consumers[group].ReadMessage(-1)
 				if msg != nil {
-					if h, ok := c.handler[*msg.TopicPartition.Topic]; ok {
-						e := newEvent(msg)
-						if err = h(e); err != nil {
-							logrus.Errorf("handle msg error: %s", err.Error())
-						}
+					e := newEvent(msg)
+					if err = handler(e); err != nil {
+						logrus.Errorf("handle msg error: %s", err.Error())
 					}
+
 				} else {
 					logrus.Errorf("consumer error: %v (%v)", err, msg)
 					continue
@@ -139,7 +142,7 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 	c.wg.Add(1)
 	go func() {
 		for m := range c.commitChan {
-			if _, err := c.consumer.CommitMessage(m); err != nil {
+			if _, err := c.consumers[group].CommitMessage(m); err != nil {
 				logrus.Errorf("commit error: %v (%v)", err, m)
 			}
 		}
@@ -147,21 +150,20 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 		c.wg.Done()
 	}()
 
-	return newSubscriber(c), nil
+	return newSubscriber(c, group), nil
 }
 
 func (c *Confluent) String() string {
 	return "kafka"
 }
 
-func newSubscriber(c *Confluent) mq.Subscriber {
-	return &subscriber{confluent: c}
+func newSubscriber(c *Confluent, group string) mq.Subscriber {
+	return &subscriber{confluent: c, group: group}
 }
 
 type subscriber struct {
 	confluent *Confluent
-
-	lock sync.RWMutex
+	group     string
 }
 
 func (s *subscriber) Options() mq.SubscribeOptions {
@@ -169,22 +171,15 @@ func (s *subscriber) Options() mq.SubscribeOptions {
 }
 
 func (s *subscriber) Topic() string {
-	topics, _ := s.confluent.consumer.Subscription()
+	topics, _ := s.confluent.consumers[s.group].Subscription()
 
 	return strings.Join(topics, ",")
 }
 
 func (s *subscriber) Unsubscribe() error {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if s.confluent.consumer.IsClosed() {
-		return nil
-	}
-
 	close(s.confluent.stopRead)
 
 	s.confluent.wg.Wait()
 
-	return s.confluent.consumer.Close()
+	return s.confluent.consumers[s.group].Close()
 }

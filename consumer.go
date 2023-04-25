@@ -33,14 +33,14 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	_, err = kafka.Subscribe("confluent_test", "dada", func(event mq.Event) error {
-		fmt.Println(string(event.Message().Body))
-
-		return nil
-	})
-	if err != nil {
-		logrus.Fatal(err)
-	}
+	//_, err = kafka.Subscribe("confluent_test", "dada", func(event mq.Event) error {
+	//	fmt.Println(string(event.Message().Body))
+	//
+	//	return nil
+	//})
+	//if err != nil {
+	//	logrus.Fatal(err)
+	//}
 
 	select {
 	case sig := <-sigchan:
