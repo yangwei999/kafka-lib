@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/opensourceways/server-common-lib v0.0.0-20230208064916-61fc43dfb8db
 	github.com/sirupsen/logrus v1.9.0
+	k8s.io/apimachinery v0.26.1
 )
 
 require (

@@ -3,9 +3,9 @@ package confluent
 import (
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/opensourceways/kafka-lib/mq"
 )
@@ -19,7 +19,7 @@ type Confluent struct {
 	opts     mq.Options
 	broker   string
 
-	consumers map[string]struct{}
+	consumers sets.String
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -32,8 +32,6 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 	}
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
-
-	c.consumers = make(map[string]struct{})
 
 	return nil
 }
@@ -72,27 +70,28 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          msg.Body,
 		Key:            []byte(msg.MessageKey()),
-		Timestamp:      time.Now(),
 	}, nil)
 }
 
-func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Subscriber, err error) {
-	if _, ok := c.consumers[group]; ok {
-		err = errors.New("the group already exists, we don't recommend a group subscribe multiple topics")
+func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
+	if c.consumers.Has(group) {
+		err = errors.New("the group already exists, " +
+			"it is not recommended that one group subscribe to multiple topics",
+		)
 
 		return
 	}
 
-	ns, err := newSubscriber(c.broker, topic, group, handler)
+	s, err := newSubscriber(c.broker, topic, group, handler)
 	if err != nil {
 		return
 	}
 
-	ns.start()
+	s.start()
 
-	c.consumers[group] = struct{}{}
+	c.consumers.Insert(group)
 
-	s = ns
+	mqs = s
 
 	return
 }
