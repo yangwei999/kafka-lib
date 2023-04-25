@@ -23,7 +23,11 @@ type Confluent struct {
 
 	commitChan chan *kafka.Message
 	stopRead   chan struct{}
-	wg         sync.WaitGroup
+
+	topics  []string
+	handler map[string]mq.Handler
+
+	wg sync.WaitGroup
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -82,7 +86,7 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 	}, nil)
 }
 
-func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscriber, err error) {
+func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Subscriber, err error) {
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        c.broker,
 		"group.id":                 group,
@@ -96,7 +100,10 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 
 	c.consumer = consumer
 
-	if err = c.consumer.Subscribe(topic, nil); err != nil {
+	c.topics = append(c.topics, topic)
+	c.handler[topic] = handler
+
+	if err = c.consumer.SubscribeTopics(c.topics, nil); err != nil {
 		return
 	}
 
@@ -110,9 +117,11 @@ func (c *Confluent) Subscribe(topic, group string, h mq.Handler) (s mq.Subscribe
 			default:
 				msg, err := c.consumer.ReadMessage(-1)
 				if msg != nil {
-					e := newEvent(msg)
-					if err = h(e); err != nil {
-						logrus.Errorf("handle msg error: %s", err.Error())
+					if h, ok := c.handler[*msg.TopicPartition.Topic]; ok {
+						e := newEvent(msg)
+						if err = h(e); err != nil {
+							logrus.Errorf("handle msg error: %s", err.Error())
+						}
 					}
 				} else {
 					logrus.Errorf("consumer error: %v (%v)", err, msg)
