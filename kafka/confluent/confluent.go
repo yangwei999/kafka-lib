@@ -45,6 +45,8 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.stopRead = make(chan struct{})
 
+	c.handler = make(map[string]mq.Handler)
+
 	return nil
 }
 
