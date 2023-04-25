@@ -109,6 +109,8 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Sub
 		return
 	}
 
+	consumer.IsClosed()
+
 	go func() {
 		for {
 			select {
@@ -173,6 +175,10 @@ func (s *subscriber) Topic() string {
 }
 
 func (s *subscriber) Unsubscribe() error {
+	if s.confluent.consumer.IsClosed() {
+		return nil
+	}
+
 	close(s.confluent.stopRead)
 
 	s.confluent.wg.Wait()
