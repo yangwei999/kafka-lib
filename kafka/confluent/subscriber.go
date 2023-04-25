@@ -29,7 +29,7 @@ func newSubscriber(broker, topic, group string, handler mq.Handler) (sub *subscr
 	sub = &subscriber{
 		consumer:   consumer,
 		handler:    handler,
-		commitChan: make(chan *kafka.Message, 10000),
+		commitChan: make(chan *kafka.Message, 100),
 		stopRead:   make(chan struct{}),
 	}
 
@@ -47,43 +47,45 @@ type subscriber struct {
 }
 
 func (s *subscriber) start() {
-	go func() {
-		for {
-			select {
-			case <-s.stopRead:
-				close(s.commitChan)
-
-				return
-			default:
-				msg, err := s.consumer.ReadMessage(-1)
-				if msg != nil {
-					e := newEvent(msg)
-					if err = s.handler(e); err != nil {
-						logrus.Errorf("handle msg error: %s", err.Error())
-					}
-
-				} else {
-					logrus.Errorf("consumer error: %v (%v)", err, msg)
-					continue
-				}
-
-				// commit offset async
-				s.commitChan <- msg
-			}
-		}
-	}()
+	go s.process()
 
 	s.wg.Add(1)
-	go func() {
-		for m := range s.commitChan {
-			if _, err := s.consumer.CommitMessage(m); err != nil {
-				logrus.Errorf("commit error: %v (%v)", err, m)
+	go s.commit()
+}
+
+func (s *subscriber) process() {
+	for {
+		select {
+		case <-s.stopRead:
+			close(s.commitChan)
+
+			return
+		default:
+			msg, err := s.consumer.ReadMessage(-1)
+			if msg != nil {
+				e := newEvent(msg)
+				if err = s.handler(e); err != nil {
+					logrus.Errorf("handle msg error: %s", err.Error())
+				}
+			} else {
+				logrus.Errorf("consumer error: %v (%v)", err, msg)
+				continue
 			}
+
+			// commit offset async
+			s.commitChan <- msg
 		}
+	}
+}
 
-		s.wg.Done()
-	}()
+func (s *subscriber) commit() {
+	for m := range s.commitChan {
+		if _, err := s.consumer.CommitMessage(m); err != nil {
+			logrus.Errorf("commit error: %v (%v)", err, m)
+		}
+	}
 
+	s.wg.Done()
 }
 
 func (s *subscriber) Options() mq.SubscribeOptions {
