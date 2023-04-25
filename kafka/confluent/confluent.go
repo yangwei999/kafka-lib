@@ -162,13 +162,9 @@ func (s *subscriber) Topic() string {
 }
 
 func (s *subscriber) Unsubscribe() error {
-	if err := s.confluent.consumer.Unsubscribe(); err != nil {
-		return err
-	}
-
 	close(s.confluent.stopRead)
 
 	s.confluent.wg.Wait()
 
-	return nil
+	return s.confluent.consumer.Close()
 }
