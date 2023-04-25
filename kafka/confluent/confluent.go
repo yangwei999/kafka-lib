@@ -89,18 +89,18 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (s mq.Subscriber, err error) {
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        c.broker,
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
-	})
-	if err != nil {
-		return
+	if c.consumer == nil {
+		c.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
+			"bootstrap.servers":        c.broker,
+			"group.id":                 group,
+			"auto.offset.reset":        "earliest",
+			"allow.auto.create.topics": true,
+			"enable.auto.commit":       false,
+		})
+		if err != nil {
+			return
+		}
 	}
-
-	c.consumer = consumer
 
 	c.topics = append(c.topics, topic)
 	c.handler[topic] = handler
