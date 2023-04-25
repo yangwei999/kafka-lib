@@ -3,6 +3,7 @@ package confluent
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/sirupsen/logrus"
@@ -61,19 +62,18 @@ func (s *subscriber) process() {
 
 			return
 		default:
-			msg, err := s.consumer.ReadMessage(-1)
-			if msg != nil {
+			msg, err := s.consumer.ReadMessage(time.Second)
+			if err == nil {
 				e := newEvent(msg)
 				if err = s.handler(e); err != nil {
 					logrus.Errorf("handle msg error: %s", err.Error())
 				}
-			} else {
-				logrus.Errorf("consumer error: %v (%v)", err, msg)
-				continue
-			}
 
-			// commit offset async
-			s.commitChan <- msg
+				// commit offset async
+				s.commitChan <- msg
+			} else if !err.(kafka.Error).IsTimeout() {
+				logrus.Errorf("consumer error: %v (%v)", err, msg)
+			}
 		}
 	}
 }
