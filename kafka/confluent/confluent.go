@@ -19,7 +19,7 @@ type Confluent struct {
 
 	subscribers map[string]*subscriber
 
-	sss map[string]map[string]mq.Handler
+	handlers map[string]mq.Handler
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -35,7 +35,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.subscribers = make(map[string]*subscriber)
 
-	c.sss = make(map[string]map[string]mq.Handler)
+	c.handlers = make(map[string]mq.Handler)
 
 	return nil
 }
@@ -87,16 +87,11 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 		return
 	}
 
-	mh := make(map[string]mq.Handler)
-	mh[topic] = handler
+	c.handlers[topic] = handler
 
-	c.sss[group] = mh
-
-	for _, v := range c.sss {
-		for t, h := range v {
-			s.topics.Insert(t)
-			s.handlers[t] = h
-		}
+	for t, h := range c.handlers {
+		s.topics.Insert(t)
+		s.handlers[t] = h
 	}
 
 	if err = s.consumer.SubscribeTopics(s.topics.UnsortedList(), nil); err != nil {
