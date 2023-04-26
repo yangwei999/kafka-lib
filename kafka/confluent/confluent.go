@@ -87,7 +87,10 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 		return
 	}
 
-	c.sss[group][topic] = handler
+	mh := make(map[string]mq.Handler)
+	mh[topic] = handler
+
+	c.sss[group] = mh
 
 	for _, v := range c.sss {
 		for t, h := range v {
