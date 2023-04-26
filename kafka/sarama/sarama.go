@@ -1,4 +1,4 @@
-package kafka
+package sarama
 
 import (
 	"context"
@@ -215,7 +215,7 @@ func (kMQ *kfkMQ) saramaClusterClient() (sarama.Client, error) {
 	return sarama.NewClient(kMQ.opts.Addresses, kMQ.clusterConfig())
 }
 
-func NewMQ(opts ...mq.Option) mq.MQ {
+func NewSaramaMQ(opts ...mq.Option) mq.MQ {
 	options := mq.Options{
 		Codec:   mq.JsonCodec{},
 		Context: context.Background(),
