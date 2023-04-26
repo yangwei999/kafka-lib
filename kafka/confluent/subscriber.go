@@ -11,26 +11,30 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-func newSubscriber(broker, group string) (sub *subscriber, err error) {
+func newSubscriber(broker, group string) (*subscriber, error) {
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        broker,
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
+		"bootstrap.servers": broker,
+		"group.id":          group,
+		// action to take when there is no initial offset in offset store or
+		// the desired offset is out of range
+		"auto.offset.reset": "earliest",
+		// the broker must also be configured with auto.create.topics.enable=true
+		// for this configuration to take effect
 		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
+		// automatic commit can result in repeated consumption and message loss
+		"enable.auto.commit": false,
 	})
+
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	sub = &subscriber{
+	return &subscriber{
 		consumer:   consumer,
+		handlers:   make(Handlers),
 		commitChan: make(chan *kafka.Message, 100),
 		stopRead:   make(chan struct{}),
-		handlers:   make(Handlers),
-	}
-
-	return
+	}, nil
 }
 
 type subscriber struct {
@@ -55,9 +59,11 @@ func (s *subscriber) subscribe(h Handlers) error {
 }
 
 func (s *subscriber) start() {
+	// handle message in a goroutine
 	go s.process()
 
 	s.wg.Add(1)
+	// commit message in another goroutine
 	go s.commit()
 }
 

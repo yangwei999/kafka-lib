@@ -185,7 +185,7 @@ func (kMQ *kfkMQ) subscribe(topic string, h mq.Handler, opts ...mq.SubscribeOpti
 }
 
 func (kMQ *kfkMQ) String() string {
-	return "kafka"
+	return "kafka-sarama"
 }
 
 func (kMQ *kfkMQ) clusterConfig() *sarama.Config {

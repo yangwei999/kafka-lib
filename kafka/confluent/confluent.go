@@ -98,7 +98,7 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 	// store the relationship, use it for the next subscription
 	c.buildGroupTopicHandle(group, topic, handler)
 
-	// thr real subscription
+	// the real subscription
 	if err = s.subscribe(c.groupTopicHandle[group]); err != nil {
 		return
 	}
@@ -115,7 +115,7 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 }
 
 func (c *Confluent) String() string {
-	return "kafka"
+	return "kafka-confluent"
 }
 
 func (c *Confluent) buildGroupTopicHandle(group, topic string, handler mq.Handler) {
