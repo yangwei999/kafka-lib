@@ -7,7 +7,6 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/opensourceways/kafka-lib/mq"
 )
@@ -28,9 +27,7 @@ func newSubscriber(broker, group string) (sub *subscriber, err error) {
 		consumer:   consumer,
 		commitChan: make(chan *kafka.Message, 100),
 		stopRead:   make(chan struct{}),
-
-		handlers: make(map[string]mq.Handler),
-		topics:   sets.NewString(),
+		handlers:   make(Handlers),
 	}
 
 	return
@@ -38,13 +35,23 @@ func newSubscriber(broker, group string) (sub *subscriber, err error) {
 
 type subscriber struct {
 	consumer *kafka.Consumer
-	handlers map[string]mq.Handler
-	topics   sets.String
+	handlers Handlers
 
 	commitChan chan *kafka.Message
 	stopRead   chan struct{}
 
 	wg sync.WaitGroup
+}
+
+func (s *subscriber) subscribe(h Handlers) error {
+	s.handlers = h
+
+	var topics []string
+	for t, _ := range s.handlers {
+		topics = append(topics, t)
+	}
+
+	return s.consumer.SubscribeTopics(topics, nil)
 }
 
 func (s *subscriber) start() {

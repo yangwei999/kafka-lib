@@ -8,6 +8,8 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
+type Handlers map[string]mq.Handler
+
 func NewConfluentMQ() mq.MQ {
 	return &Confluent{}
 }
@@ -19,7 +21,7 @@ type Confluent struct {
 
 	subscribers map[string]*subscriber
 
-	sss map[string]map[string]mq.Handler
+	groupTopicHandle map[string]Handlers
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -35,7 +37,8 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.subscribers = make(map[string]*subscriber)
 
-	c.sss = make(map[string]map[string]mq.Handler)
+	// the relationship between group,topic and handle
+	c.groupTopicHandle = make(map[string]Handlers)
 
 	return nil
 }
@@ -78,33 +81,32 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
+	// when a group subscribes to multiple topics,
+	// we should unsubscribe the previous one
 	if s, ok := c.subscribers[group]; ok {
-		s.Unsubscribe()
+		if err = s.Unsubscribe(); err != nil {
+			return
+		}
 	}
 
+	// new consumer, the relationship between consumer and group is one-to-one
 	s, err := newSubscriber(c.broker, group)
 	if err != nil {
 		return
 	}
 
-	handlers, ok := c.sss[group]
-	if !ok {
-		handlers = make(map[string]mq.Handler)
-	}
-	handlers[topic] = handler
-	c.sss[group] = handlers
+	// store the relationship, use it for the next subscription
+	c.buildGroupTopicHandle(group, topic, handler)
 
-	for t, h := range c.sss[group] {
-		s.topics.Insert(t)
-		s.handlers[t] = h
-	}
-
-	if err = s.consumer.SubscribeTopics(s.topics.UnsortedList(), nil); err != nil {
+	// thr real subscription
+	if err = s.subscribe(c.groupTopicHandle[group]); err != nil {
 		return
 	}
 
+	// start to receive message in goroutine
 	s.start()
 
+	// store the subscriber, use it at the beginning of this function
 	c.subscribers[group] = s
 
 	mqs = s
@@ -114,4 +116,15 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 
 func (c *Confluent) String() string {
 	return "kafka"
+}
+
+func (c *Confluent) buildGroupTopicHandle(group, topic string, handler mq.Handler) {
+	handlers, ok := c.groupTopicHandle[group]
+	if !ok {
+		handlers = make(Handlers)
+	}
+
+	handlers[topic] = handler
+
+	c.groupTopicHandle[group] = handlers
 }
