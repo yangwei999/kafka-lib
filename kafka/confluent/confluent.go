@@ -1,25 +1,25 @@
 package confluent
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/opensourceways/kafka-lib/mq"
 )
+
+type Handlers map[string]mq.Handler
 
 func NewConfluentMQ() mq.MQ {
 	return &Confluent{}
 }
 
 type Confluent struct {
-	producer *kafka.Producer
-	opts     mq.Options
-	broker   string
-
-	consumers sets.String
+	producer         *kafka.Producer
+	opts             mq.Options
+	broker           string
+	subscribers      map[string]*subscriber
+	groupTopicHandle map[string]Handlers
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -33,7 +33,10 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	c.consumers = sets.NewString()
+	c.subscribers = make(map[string]*subscriber)
+
+	// the relationship between group,topic and handle
+	c.groupTopicHandle = make(map[string]Handlers)
 
 	return nil
 }
@@ -76,22 +79,33 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
-	if c.consumers.Has(group) {
-		err = errors.New("the group already exists, " +
-			"it is not recommended that one group subscribe to multiple topics",
-		)
-
-		return
+	// when a group subscribes to multiple topics,
+	// we should unsubscribe the previous one
+	if s, ok := c.subscribers[group]; ok {
+		if err = s.Unsubscribe(); err != nil {
+			return
+		}
 	}
 
-	s, err := newSubscriber(c.broker, topic, group, handler)
+	// new consumer, the relationship between consumer and group is one-to-one
+	s, err := newSubscriber(c.broker, group)
 	if err != nil {
 		return
 	}
 
+	// store the relationship, use it for the next subscription
+	c.buildGroupTopicHandle(group, topic, handler)
+
+	// the real subscription
+	if err = s.subscribe(c.groupTopicHandle[group]); err != nil {
+		return
+	}
+
+	// start to receive message in goroutine
 	s.start()
 
-	c.consumers.Insert(group)
+	// store the subscriber, use it at the beginning of this function
+	c.subscribers[group] = s
 
 	mqs = s
 
@@ -99,5 +113,16 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 }
 
 func (c *Confluent) String() string {
-	return "kafka"
+	return "kafka-confluent"
+}
+
+func (c *Confluent) buildGroupTopicHandle(group, topic string, handler mq.Handler) {
+	handlers, ok := c.groupTopicHandle[group]
+	if !ok {
+		handlers = make(Handlers)
+	}
+
+	handlers[topic] = handler
+
+	c.groupTopicHandle[group] = handlers
 }

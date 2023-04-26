@@ -11,46 +11,56 @@ import (
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-func newSubscriber(broker, topic, group string, handler mq.Handler) (sub *subscriber, err error) {
+func newSubscriber(broker, group string) (*subscriber, error) {
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        broker,
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
+		"bootstrap.servers": broker,
+		"group.id":          group,
+		// action to take when there is no initial offset in offset store or
+		// the desired offset is out of range
+		"auto.offset.reset": "earliest",
+		// the broker must also be configured with auto.create.topics.enable=true
+		// for this configuration to take effect
 		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
+		// automatic commit can result in repeated consumption and message loss
+		"enable.auto.commit": false,
 	})
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	if err = consumer.Subscribe(topic, nil); err != nil {
-		return
-	}
-
-	sub = &subscriber{
+	return &subscriber{
 		consumer:   consumer,
-		handler:    handler,
+		handlers:   make(Handlers),
 		commitChan: make(chan *kafka.Message, 100),
 		stopRead:   make(chan struct{}),
-	}
-
-	return
+	}, nil
 }
 
 type subscriber struct {
-	consumer *kafka.Consumer
-	handler  mq.Handler
-
+	consumer   *kafka.Consumer
+	handlers   Handlers
 	commitChan chan *kafka.Message
 	stopRead   chan struct{}
+	wg         sync.WaitGroup
+}
 
-	wg sync.WaitGroup
+func (s *subscriber) subscribe(h Handlers) error {
+	s.handlers = h
+
+	var topics []string
+	for t, _ := range s.handlers {
+		topics = append(topics, t)
+	}
+
+	return s.consumer.SubscribeTopics(topics, nil)
 }
 
 func (s *subscriber) start() {
+	// handle message in a goroutine
 	go s.process()
 
 	s.wg.Add(1)
+	// commit message in another goroutine
 	go s.commit()
 }
 
@@ -65,7 +75,13 @@ func (s *subscriber) process() {
 			msg, err := s.consumer.ReadMessage(time.Second)
 			if err == nil {
 				e := newEvent(msg)
-				if err = s.handler(e); err != nil {
+
+				handler, ok := s.handlers[*msg.TopicPartition.Topic]
+				if !ok {
+					continue
+				}
+
+				if err = handler(e); err != nil {
 					logrus.Errorf("handle msg error: %s", err.Error())
 				}
 
@@ -99,6 +115,10 @@ func (s *subscriber) Topic() string {
 }
 
 func (s *subscriber) Unsubscribe() error {
+	if s.consumer.IsClosed() {
+		return nil
+	}
+
 	close(s.stopRead)
 
 	s.wg.Wait()
