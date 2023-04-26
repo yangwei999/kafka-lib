@@ -17,7 +17,7 @@ type Confluent struct {
 	opts     mq.Options
 	broker   string
 
-	consumers map[string]*subscriber
+	subscribers map[string]*subscriber
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -31,7 +31,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	c.consumers = make(map[string]*subscriber)
+	c.subscribers = make(map[string]*subscriber)
 
 	return nil
 }
@@ -74,13 +74,14 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
-	s, ok := c.consumers[group]
+	s, ok := c.subscribers[group]
 	if !ok {
 		s, err = newSubscriber(c.broker, group)
-
 		if err != nil {
 			return
 		}
+
+		c.subscribers[group] = s
 	}
 
 	s.topics.Insert(topic)
