@@ -74,9 +74,13 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
-	s, err := c.newSubscriber(group)
-	if err != nil {
-		return
+	s, ok := c.consumers[group]
+	if !ok {
+		s, err = newSubscriber(c.broker, group)
+
+		if err != nil {
+			return
+		}
 	}
 
 	s.topics.Insert(topic)
@@ -95,31 +99,4 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 
 func (c *Confluent) String() string {
 	return "kafka"
-}
-
-func (c *Confluent) newSubscriber(group string) (sub *subscriber, err error) {
-	if s, ok := c.consumers[group]; ok {
-		return s, nil
-	}
-
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        c.broker,
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
-	})
-	if err != nil {
-		return
-	}
-
-	sub = &subscriber{
-		consumer:   consumer,
-		commitChan: make(chan *kafka.Message, 100),
-		stopRead:   make(chan struct{}),
-
-		handlers: make(map[string]mq.Handler),
-	}
-
-	return
 }
