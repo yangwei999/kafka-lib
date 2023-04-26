@@ -45,6 +45,8 @@ type subscriber struct {
 	stopRead   chan struct{}
 
 	wg sync.WaitGroup
+
+	isRunning bool
 }
 
 func (s *subscriber) start() {
@@ -52,6 +54,8 @@ func (s *subscriber) start() {
 
 	s.wg.Add(1)
 	go s.commit()
+
+	s.isRunning = true
 }
 
 func (s *subscriber) process() {

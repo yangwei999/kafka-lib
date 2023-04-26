@@ -91,6 +91,13 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 		return
 	}
 
+	if s.isRunning {
+		close(s.stopRead)
+		s.wg.Wait()
+
+		s.isRunning = false
+	}
+
 	s.start()
 
 	mqs = s
