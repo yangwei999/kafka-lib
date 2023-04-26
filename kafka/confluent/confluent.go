@@ -18,6 +18,8 @@ type Confluent struct {
 	broker   string
 
 	subscribers map[string]*subscriber
+
+	sss map[string]map[string]mq.Handler
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -32,6 +34,8 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
 	c.subscribers = make(map[string]*subscriber)
+
+	c.sss = make(map[string]map[string]mq.Handler)
 
 	return nil
 }
@@ -74,31 +78,31 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
-	s, ok := c.subscribers[group]
-	if !ok {
-		s, err = newSubscriber(c.broker, group)
-		if err != nil {
-			return
-		}
-
-		c.subscribers[group] = s
+	if s, ok := c.subscribers[group]; ok {
+		s.Unsubscribe()
 	}
 
-	s.topics.Insert(topic)
-	s.handlers[topic] = handler
+	s, err := newSubscriber(c.broker, group)
+	if err != nil {
+		return
+	}
+
+	c.sss[group][topic] = handler
+
+	for _, v := range c.sss {
+		for t, h := range v {
+			s.topics.Insert(t)
+			s.handlers[t] = h
+		}
+	}
 
 	if err = s.consumer.SubscribeTopics(s.topics.UnsortedList(), nil); err != nil {
 		return
 	}
 
-	if s.isRunning {
-		close(s.stopRead)
-		s.wg.Wait()
-
-		s.isRunning = false
-	}
-
 	s.start()
+
+	c.subscribers[group] = s
 
 	mqs = s
 
