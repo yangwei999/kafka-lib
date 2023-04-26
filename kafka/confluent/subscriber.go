@@ -7,39 +7,15 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
-func newSubscriber(broker, topic, group string, handler mq.Handler) (sub *subscriber, err error) {
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        broker,
-		"group.id":                 group,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": true,
-		"enable.auto.commit":       false,
-	})
-	if err != nil {
-		return
-	}
-
-	if err = consumer.Subscribe(topic, nil); err != nil {
-		return
-	}
-
-	sub = &subscriber{
-		consumer:   consumer,
-		handler:    handler,
-		commitChan: make(chan *kafka.Message, 100),
-		stopRead:   make(chan struct{}),
-	}
-
-	return
-}
-
 type subscriber struct {
 	consumer *kafka.Consumer
-	handler  mq.Handler
+	handlers map[string]mq.Handler
+	topics   sets.String
 
 	commitChan chan *kafka.Message
 	stopRead   chan struct{}
@@ -65,7 +41,13 @@ func (s *subscriber) process() {
 			msg, err := s.consumer.ReadMessage(time.Second)
 			if err == nil {
 				e := newEvent(msg)
-				if err = s.handler(e); err != nil {
+
+				handler, ok := s.handlers[*msg.TopicPartition.Topic]
+				if !ok {
+					continue
+				}
+
+				if err = handler(e); err != nil {
 					logrus.Errorf("handle msg error: %s", err.Error())
 				}
 
@@ -99,6 +81,10 @@ func (s *subscriber) Topic() string {
 }
 
 func (s *subscriber) Unsubscribe() error {
+	if s.consumer.IsClosed() {
+		return nil
+	}
+
 	close(s.stopRead)
 
 	s.wg.Wait()

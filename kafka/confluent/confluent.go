@@ -1,11 +1,9 @@
 package confluent
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/opensourceways/kafka-lib/mq"
 )
@@ -19,7 +17,7 @@ type Confluent struct {
 	opts     mq.Options
 	broker   string
 
-	consumers sets.String
+	consumers map[string]*subscriber
 }
 
 func (c *Confluent) Init(opts ...mq.Option) error {
@@ -33,7 +31,7 @@ func (c *Confluent) Init(opts ...mq.Option) error {
 
 	c.broker = strings.Join(c.opts.Addresses, ",")
 
-	c.consumers = sets.NewString()
+	c.consumers = make(map[string]*subscriber)
 
 	return nil
 }
@@ -76,22 +74,19 @@ func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOpt
 }
 
 func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.Subscriber, err error) {
-	if c.consumers.Has(group) {
-		err = errors.New("the group already exists, " +
-			"it is not recommended that one group subscribe to multiple topics",
-		)
-
-		return
-	}
-
-	s, err := newSubscriber(c.broker, topic, group, handler)
+	s, err := c.newSubscriber(group)
 	if err != nil {
 		return
 	}
 
-	s.start()
+	s.topics.Insert(topic)
+	s.handlers[topic] = handler
 
-	c.consumers.Insert(group)
+	if err = s.consumer.SubscribeTopics(s.topics.UnsortedList(), nil); err != nil {
+		return
+	}
+
+	s.start()
 
 	mqs = s
 
@@ -100,4 +95,31 @@ func (c *Confluent) Subscribe(topic, group string, handler mq.Handler) (mqs mq.S
 
 func (c *Confluent) String() string {
 	return "kafka"
+}
+
+func (c *Confluent) newSubscriber(group string) (sub *subscriber, err error) {
+	if s, ok := c.consumers[group]; ok {
+		return s, nil
+	}
+
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers":        c.broker,
+		"group.id":                 group,
+		"auto.offset.reset":        "earliest",
+		"allow.auto.create.topics": true,
+		"enable.auto.commit":       false,
+	})
+	if err != nil {
+		return
+	}
+
+	sub = &subscriber{
+		consumer:   consumer,
+		commitChan: make(chan *kafka.Message, 100),
+		stopRead:   make(chan struct{}),
+
+		handlers: make(map[string]mq.Handler),
+	}
+
+	return
 }
