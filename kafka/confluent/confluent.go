@@ -66,6 +66,7 @@ func (c *Confluent) Connect() error {
 }
 
 func (c *Confluent) Disconnect() error {
+	c.producer.Flush(3000)
 	c.producer.Close()
 
 	return nil
