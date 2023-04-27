@@ -1,9 +1,11 @@
-package kafka
+package confluent
 
-import "github.com/opensourceways/kafka-lib/mq"
+import (
+	"github.com/opensourceways/kafka-lib/mq"
+)
 
 var (
-	DefaultMQ = NewMQ()
+	DefaultMQ = NewConfluentMQ()
 )
 
 func Init(opts ...mq.Option) error {

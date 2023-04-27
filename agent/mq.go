@@ -5,14 +5,14 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/opensourceways/kafka-lib/kafka"
+	"github.com/opensourceways/kafka-lib/confluent"
 	"github.com/opensourceways/kafka-lib/mq"
 )
 
 var instance *serviceImpl
 
 func Init(cfg *Config, log *logrus.Entry) error {
-	err := kafka.InitV2(
+	err := confluent.Init(
 		mq.Addresses(cfg.mqConfig().Addresses...),
 		mq.Log(log),
 	)
@@ -20,7 +20,7 @@ func Init(cfg *Config, log *logrus.Entry) error {
 		return err
 	}
 
-	if err := kafka.Connect(); err != nil {
+	if err := confluent.Connect(); err != nil {
 		return err
 	}
 
@@ -34,13 +34,13 @@ func Exit() {
 		instance.unsubscribe()
 	}
 
-	if err := kafka.Disconnect(); err != nil {
+	if err := confluent.Disconnect(); err != nil {
 		logrus.Errorf("exit kafka, err:%v", err)
 	}
 }
 
 func Publish(topic string, header map[string]string, msg []byte) error {
-	return kafka.Publish(topic, &mq.Message{
+	return confluent.Publish(topic, &mq.Message{
 		Header: header,
 		Body:   msg,
 	})
@@ -96,7 +96,7 @@ func (impl *serviceImpl) registerHandler(topic, group string, h Handler) (mq.Sub
 		return nil, nil
 	}
 
-	return kafka.Subscribe(topic, group+topic, func(e mq.Event) error {
+	return confluent.Subscribe(topic, group+topic, func(e mq.Event) error {
 		msg := e.Message()
 		if msg == nil {
 			return nil
