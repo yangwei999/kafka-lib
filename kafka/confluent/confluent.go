@@ -1,6 +1,7 @@
 package confluent
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -71,6 +72,17 @@ func (c *Confluent) Disconnect() error {
 }
 
 func (c *Confluent) Publish(topic string, msg *mq.Message, opts ...mq.PublishOption) error {
+	go func() {
+		for e := range c.producer.Events() {
+			switch ev := e.(type) {
+			case *kafka.Message:
+				if ev.TopicPartition.Error != nil {
+					fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
+				}
+			}
+		}
+	}()
+
 	return c.producer.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          msg.Body,
