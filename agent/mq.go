@@ -3,15 +3,16 @@ package agent
 import (
 	"errors"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/opensourceways/kafka-lib/kafka"
 	"github.com/opensourceways/kafka-lib/mq"
-	"github.com/sirupsen/logrus"
 )
 
 var instance *serviceImpl
 
 func Init(cfg *Config, log *logrus.Entry) error {
-	err := kafka.Init(
+	err := kafka.InitV2(
 		mq.Addresses(cfg.mqConfig().Addresses...),
 		mq.Log(log),
 	)

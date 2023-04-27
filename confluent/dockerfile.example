@@ -1,0 +1,12 @@
+FROM golang:1.18-alpine as BUILDER
+RUN apk add alpine-sdk
+
+WORKDIR /go/src/test
+COPY . .
+
+RUN GO111MODULE=on go build -tags musl -a -o confluent .
+
+FROM alpine:3.14
+COPY --from=BUILDER /go/src/test/confluent /opt/app/confluent
+
+ENTRYPOINT ["/opt/app/confluent"]
